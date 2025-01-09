@@ -1,2 +1,4 @@
 # faceRecognition
-Face Recognition using Python v3.7
+Face Recognition application
+Python version: v3.7
+Library: face_recognition, numpy,cv2
