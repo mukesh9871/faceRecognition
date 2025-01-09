@@ -1,2 +1,2 @@
 # faceRecognition
-Face Recognition using Python
+Face Recognition using Python v3.7
