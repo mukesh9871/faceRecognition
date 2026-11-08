@@ -1,0 +1,42 @@
+# facerec configuration. Relative paths are resolved against this file's folder.
+# Any value can also be overridden from the command line (see `facerec run --help`).
+
+camera:
+  source: 0            # webcam index, or a path / URL to a video file or stream
+  width: 1280
+  height: 720
+  fps: 30
+  backend: auto        # auto (DirectShow on Windows) | dshow | msmf | v4l2 | any
+
+detector:
+  name: yunet
+  model: models/face_detection_yunet_2023mar.onnx
+  score_threshold: 0.8
+  nms_threshold: 0.3
+  top_k: 50
+  max_side: 640        # frames are downscaled to this long side for detection only
+
+recognizer:
+  name: sface
+  model: models/face_recognition_sface_2021dec.onnx
+  threshold: 0.363     # cosine similarity needed to accept a match (OpenCV's SFace value)
+
+tracker:
+  iou_threshold: 0.3          # min overlap to treat a detection as the same face as last frame
+  max_misses: 15              # frames a track survives without a detection
+  min_face_size: 40           # px; smaller faces are tracked but not recognized
+  vote_frames: 5              # embeddings collected per track before trusting the identity
+  confirm_votes: 3            # votes for one name needed to confirm it
+  reidentify_interval: 30     # frames between re-checks of a confirmed track
+  unknown_retry_interval: 10  # frames between re-checks of an unknown track
+
+attendance:
+  db_path: data/attendance.db
+  cooldown_s: 10              # min seconds between last_seen updates per person
+
+paths:
+  faces_dir: data/faces       # one sub-folder per person: data/faces/<Name>/*.jpg
+  gallery_cache: data/gallery.npz
+  models_dir: models
+
+num_threads: 0                # OpenCV threads; 0 = OpenCV default
