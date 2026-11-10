@@ -115,7 +115,8 @@ def export_csv(rows: Iterable[AttendanceRow], path: str | Path) -> int:
 class AttendanceLogger:
     """Rate-limited, non-blocking front end for :class:`AttendanceStore`.
 
-    * ``arrived()`` - a track was just confirmed as this person: logs an event and marks seen.
+    * ``arrived()`` - a track was just confirmed as this person: logs an event and marks seen,
+      unless the person was already reported within ``cooldown_s`` (then it acts as ``seen``).
     * ``seen()``    - person still visible: updates ``last_seen`` at most every ``cooldown_s``.
     """
 
@@ -130,7 +131,8 @@ class AttendanceLogger:
         self.db_path = Path(db_path)
         self.cooldown_s = cooldown_s
         self.clock = clock
-        self._last_written: dict[str, float] = {}
+        self._last_written: dict[str, float] = {}  # last DB write per person
+        self._last_present: dict[str, float] = {}  # last time each person was reported at all
         self._queue: queue.Queue = queue.Queue()
         self._thread = threading.Thread(target=self._writer, name="attendance", daemon=True)
         self._ready = threading.Event()
@@ -142,11 +144,19 @@ class AttendanceLogger:
 
     def arrived(self, person: str, score: float, track_id: int | None = None) -> None:
         now = self.clock()
+        last_present = self._last_present.get(person)
+        if last_present is not None and now - last_present < self.cooldown_s:
+            # Same person picked up by a new track after a short gap (turned away, occluded):
+            # not a new arrival, so only refresh last_seen under the usual cooldown.
+            self.seen(person, score)
+            return
+        self._last_present[person] = now
         self._queue.put(("event", person, now, score, track_id))
         self._last_written[person] = now
 
     def seen(self, person: str, score: float) -> None:
         now = self.clock()
+        self._last_present[person] = now
         last = self._last_written.get(person)
         if last is None or now - last >= self.cooldown_s:
             self._last_written[person] = now
