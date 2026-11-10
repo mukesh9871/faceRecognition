@@ -12,7 +12,7 @@ from pathlib import Path
 import cv2
 
 from facerec.attendance import AttendanceLogger, AttendanceStore
-from facerec.capture import ThreadedCamera, open_capture, parse_source
+from facerec.capture import ThreadedCamera, is_file_source, open_capture, parse_source
 from facerec.config import Config
 from facerec.gallery import EnrollStats, Gallery, build_gallery
 from facerec.overlay import draw_hud, draw_tracks
@@ -158,21 +158,29 @@ def run_benchmark(
     print_enroll_stats(gallery, stats)
     source = parse_source(cfg.camera.source)
     cap = open_capture(source, cfg.camera.width, cfg.camera.height, cfg.camera.fps, cfg.camera.backend)
-    is_file = not isinstance(source, int)
+    is_file = is_file_source(source)
 
     samples = {s: [] for s in STAGES}
     embeds = faces = processed = 0
-    seen = 0
+    seen = failures = 0
     start = None
+    shape = None  # of the last good frame; `frame` is None after a failed read
     try:
         while processed < frames:
             ok, frame = cap.read()
             if not ok:
-                if is_file and seen > 0:
+                failures += 1
+                if is_file and seen > 0 and failures == 1:
                     cap.set(cv2.CAP_PROP_POS_FRAMES, 0)  # loop short clips
                     continue
+                if not is_file and failures <= 30:
+                    time.sleep(0.01)  # webcams/streams drop the odd frame, e.g. at startup
+                    continue
+                log.warning("Source stopped delivering frames after %d frame(s).", seen)
                 break
+            failures = 0
             seen += 1
+            shape = frame.shape
             result = engine.process(frame)
             if seen <= warmup:
                 continue
@@ -190,7 +198,7 @@ def run_benchmark(
     wall = time.perf_counter() - start
 
     mode = "embed every frame (old behaviour)" if always_embed else "tracked (embed on demand)"
-    print(f"\nBenchmark: {processed} frames, {frame.shape[1]}x{frame.shape[0]}, mode = {mode}")
+    print(f"\nBenchmark: {processed} frames, {shape[1]}x{shape[0]}, mode = {mode}")
     print(f"{'stage':<8}{'mean ms':>10}{'p50 ms':>10}{'p95 ms':>10}")
     report: dict[str, dict[str, float]] = {}
     for s in STAGES:
