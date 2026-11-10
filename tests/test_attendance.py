@@ -66,3 +66,36 @@ def test_export_csv(tmp_path):
     with open(out, newline="", encoding="utf-8") as f:
         rows = list(csv.DictReader(f))
     assert [r["person"] for r in rows] == ["carol", "dave"]
+
+
+def test_writer_survives_a_failed_commit(tmp_path, monkeypatch):
+    import sqlite3
+    import threading
+
+    real_commit = AttendanceStore.commit
+    calls = []
+    first_commit_done = threading.Event()
+
+    def flaky_commit(self):
+        calls.append(1)
+        try:
+            if len(calls) == 1:
+                raise sqlite3.OperationalError("database is locked")
+            real_commit(self)
+        finally:
+            first_commit_done.set()
+
+    monkeypatch.setattr(AttendanceStore, "commit", flaky_commit)
+    db = tmp_path / "att.db"
+    clock = FakeClock(datetime(2026, 11, 8, 9, 0, 0))
+    logger = AttendanceLogger(db, cooldown_s=10, clock=clock)
+    logger.arrived("alice", 0.8, track_id=1)  # this batch's commit fails
+    assert first_commit_done.wait(5)
+    logger.arrived("bob", 0.9, track_id=2)  # must still be written
+    logger.close()
+    monkeypatch.setattr(AttendanceStore, "commit", real_commit)
+
+    store = AttendanceStore(db)
+    people = [r.person for r in store.rows("2026-11-08")]
+    store.close()
+    assert people == ["bob"]

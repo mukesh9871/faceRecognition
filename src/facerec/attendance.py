@@ -85,6 +85,9 @@ class AttendanceStore:
     def commit(self) -> None:
         self._conn.commit()
 
+    def rollback(self) -> None:
+        self._conn.rollback()
+
     def rows(self, day: str | None = None) -> list[AttendanceRow]:
         sql = "SELECT person, day, first_seen, last_seen, best_score FROM attendance"
         args: tuple = ()
@@ -183,7 +186,16 @@ class AttendanceLogger:
                         store.mark_seen(person, ts, score)
                     except sqlite3.Error:
                         log.exception("Failed to write attendance for %s", person)
-                store.commit()
+                try:
+                    store.commit()
+                except sqlite3.Error:
+                    # e.g. "database is locked" by another program: drop this batch but keep
+                    # the writer alive, otherwise every later update would be silently lost.
+                    log.exception("Failed to commit %d attendance update(s)", len(batch))
+                    try:
+                        store.rollback()
+                    except sqlite3.Error:
+                        pass
                 if stop:
                     break
         finally:
