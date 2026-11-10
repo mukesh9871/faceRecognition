@@ -99,3 +99,25 @@ def test_writer_survives_a_failed_commit(tmp_path, monkeypatch):
     people = [r.person for r in store.rows("2026-11-08")]
     store.close()
     assert people == ["bob"]
+
+
+def test_new_track_for_someone_just_seen_is_not_a_new_arrival(tmp_path):
+    db = tmp_path / "att.db"
+    clock = FakeClock(datetime(2026, 11, 8, 9, 0, 0))
+    logger = AttendanceLogger(db, cooldown_s=10, clock=clock)
+    logger.arrived("alice", 0.8, track_id=1)
+    for track_id in (2, 3, 4):  # turns away for ~0.5 s, picked up again by a new track
+        clock.advance(2)
+        logger.seen("alice", 0.8)
+        clock.advance(0.5)
+        logger.arrived("alice", 0.8, track_id=track_id)
+    clock.advance(60)  # really away for a minute, then comes back
+    logger.arrived("alice", 0.9, track_id=5)
+    logger.close()
+
+    store = AttendanceStore(db)
+    events = store._conn.execute("SELECT track_id FROM events ORDER BY id").fetchall()
+    (row,) = store.rows("2026-11-08")
+    store.close()
+    assert [e[0] for e in events] == [1, 5]
+    assert row.last_seen == "2026-11-08 09:01:07"
