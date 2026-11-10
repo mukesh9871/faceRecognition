@@ -31,6 +31,16 @@ def parse_source(source: int | str) -> int | str:
     return source
 
 
+def is_file_source(source: int | str) -> bool:
+    """True for a local video file; False for live sources (webcam index or stream URL).
+
+    Live sources are read as fast as they deliver and tolerate transient read failures;
+    files are paced at their own FPS and end on the first failed read.
+    """
+    source = parse_source(source)
+    return not isinstance(source, int) and "://" not in source
+
+
 def open_capture(
     source: int | str, width: int = 0, height: int = 0, fps: int = 0, backend: str = "auto"
 ) -> cv2.VideoCapture:
@@ -77,7 +87,7 @@ class ThreadedCamera:
         loop_video: bool = False,
     ) -> None:
         self.source = parse_source(source)
-        self.is_file = not isinstance(self.source, int)
+        self.is_file = is_file_source(self.source)  # stream URLs are live, like webcams
         self.loop_video = loop_video
         self._cap = open_capture(self.source, width, height, fps, backend)
         self._frame: np.ndarray | None = None
