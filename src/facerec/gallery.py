@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import io
 import logging
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -151,9 +153,8 @@ def build_gallery(
     dim = getattr(recognizer, "dim", 128)
     emb = np.stack(vectors).astype(np.float32) if vectors else np.zeros((0, dim), np.float32)
     if cache_path is not None and (stats.embedded or len(cached) != len(rel_keys)):
-        cache_path.parent.mkdir(parents=True, exist_ok=True)
-        np.savez(
-            cache_path,
+        _save_cache(
+            Path(cache_path),
             backend=np.array(backend),
             keys=np.array(rel_keys, dtype=str),
             labels=np.array(labels, dtype=str),
@@ -162,6 +163,23 @@ def build_gallery(
             sizes=np.array(sizes, dtype=np.int64),
         )
     return Gallery(emb, labels), stats
+
+
+def _save_cache(cache_path: Path, **arrays: np.ndarray) -> None:
+    """Write the cache atomically, at exactly ``cache_path``.
+
+    Saving through a file object stops numpy from appending ``.npz`` to other names, and
+    the temp file + ``os.replace`` means a crash mid-write never leaves a truncated cache.
+    """
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = cache_path.with_name(cache_path.name + ".tmp")
+    try:
+        with open(tmp, "wb") as f:
+            np.savez(f, **arrays)
+        os.replace(tmp, cache_path)
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
 
 
 def _embed_image(
@@ -183,7 +201,9 @@ def _load_cache(cache_path: Path, backend: str) -> dict[str, tuple[np.ndarray, i
     if not cache_path.exists():
         return {}
     try:
-        with np.load(cache_path, allow_pickle=False) as z:
+        # Read into memory first: if np.load fails on a damaged file it can leave the handle
+        # open, and on Windows that blocks os.replace when the rebuilt cache is saved.
+        with np.load(io.BytesIO(cache_path.read_bytes()), allow_pickle=False) as z:
             if str(z["backend"]) != backend:
                 log.info("Gallery cache was built with %s; re-embedding.", z["backend"])
                 return {}
