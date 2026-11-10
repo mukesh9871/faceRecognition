@@ -46,7 +46,7 @@ Run these from the repo root. Use `.venv\Scripts\python.exe` when it exists. Oth
    - embeddings per frame rising above about 0.3 in tracked mode
    - fewer faces found per frame
 
-   If the models are missing, run `facerec download-models` first. If it can't run (e.g. no enrolment photos), say so in the report instead of guessing.
+   If the models are missing, run `python -m facerec download-models` first (the `facerec.exe` launcher can be blocked by Windows Smart App Control; `python -m facerec` always works). If it can't run (e.g. no enrolment photos), say so in the report instead of guessing.
 
 Don't start the live webcam window. It needs a person in front of the camera and blocks the session. If a change can only be verified live, list it under "Not verified" with the exact command for the user to run.
 
@@ -100,7 +100,7 @@ Use this structure:
 ...
 
 ### Not verified
-- e.g. live webcam behaviour: run `facerec run --camera 0` and check X.
+- e.g. live webcam behaviour: run `python -m facerec run --camera 0` and check X.
 ```
 
 Leave out empty sections. Make file references clickable markdown links relative to the repo root. If nothing survives verification, say so plainly and still show the evidence. A clean review backed by numbers is useful.
