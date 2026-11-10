@@ -12,6 +12,7 @@ finding. The exit code is always 0 unless git itself fails.
 from __future__ import annotations
 
 import argparse
+import ast
 import re
 import subprocess
 import sys
@@ -133,6 +134,56 @@ def added_lines(diff_args: list[str]) -> dict[str, list[tuple[int, str]]]:
     return files
 
 
+def config_keys(root: Path) -> list[tuple[str, str, int]]:
+    """(section, key, line) for every config field, read from the dataclasses in config.py.
+
+    Only fields of @dataclass classes count (not locals such as ``kwargs`` in load_config).
+    Section fields come from the class that the top-level ``Config`` maps to that section,
+    e.g. ``detector: DetectorConfig`` -> ("detector", "max_side", n). Top-level scalars
+    such as ``num_threads`` have section "". ``base_dir`` is internal and skipped.
+    """
+    path = root / "src" / "facerec" / "config.py"
+    if not path.exists():
+        return []
+    try:
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+    except SyntaxError:
+        return []
+
+    def is_dataclass(node: ast.ClassDef) -> bool:
+        for d in node.decorator_list:
+            target = d.func if isinstance(d, ast.Call) else d
+            name = target.attr if isinstance(target, ast.Attribute) else getattr(target, "id", "")
+            if name == "dataclass":
+                return True
+        return False
+
+    classes = {
+        n.name: [(s.target.id, s.annotation, s.lineno) for s in n.body
+                 if isinstance(s, ast.AnnAssign) and isinstance(s.target, ast.Name)]
+        for n in tree.body if isinstance(n, ast.ClassDef) and is_dataclass(n)
+    }
+    keys: list[tuple[str, str, int]] = []
+    for field_name, annotation, lineno in classes.get("Config", []):
+        section_cls = annotation.id if isinstance(annotation, ast.Name) else None
+        if section_cls in classes:
+            keys += [(field_name, k, no) for k, _, no in classes[section_cls]]
+        elif field_name != "base_dir":
+            keys.append(("", field_name, lineno))
+    return keys
+
+
+def load_yaml(path: Path) -> dict | None:
+    """config.yaml as a dict; None if it can't be read (then the yaml check is skipped)."""
+    try:
+        import yaml
+
+        return yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    except Exception as exc:  # missing file, PyYAML not installed, invalid YAML
+        print(f"  (cannot read {path.name}: {exc}; skipping the config.yaml check)")
+        return None
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--base", default="main", help="base branch/commit (default: main)")
@@ -206,19 +257,23 @@ def main() -> int:
     # 3. Config wiring
     print("\n== Config wiring")
     cfg_issues = 0
-    new_keys = []
-    for no, text in files.get("src/facerec/config.py", []):
-        m = re.match(r"^    ([a-z_][a-z0-9_]*)\s*:\s*[^=]+=", text)
-        if m and m.group(1) not in {"base_dir"}:
-            new_keys.append((no, m.group(1)))
-    yaml_text = (root / "config.yaml").read_text(encoding="utf-8") if (root / "config.yaml").exists() else ""
+    added_cfg_lines = {no for no, _ in files.get("src/facerec/config.py", [])}
+    new_keys = [k for k in config_keys(root) if k[2] in added_cfg_lines]
+    yaml_cfg = load_yaml(root / "config.yaml")
     readme = (root / "README.md").read_text(encoding="utf-8") if (root / "README.md").exists() else ""
-    for no, key in new_keys:
-        if not re.search(rf"^\s*{key}\s*:", yaml_text, re.M):
+    for section, key, no in new_keys:
+        dotted = f"{section}.{key}" if section else key
+        if yaml_cfg is None:
+            in_yaml = True  # unknown: already reported that config.yaml couldn't be read
+        elif section:
+            in_yaml = key in (yaml_cfg.get(section) or {})
+        else:
+            in_yaml = key in yaml_cfg
+        if not in_yaml:
             cfg_issues += 1
-            print(f"  config.py:{no}: new key '{key}' missing from config.yaml")
-        elif key not in readme:
-            print(f"  config.py:{no}: new key '{key}' not mentioned in README (fine if not user-facing)")
+            print(f"  config.py:{no}: new key '{dotted}' missing from config.yaml")
+        elif not re.search(rf"\b{re.escape(key)}\b", readme):
+            print(f"  config.py:{no}: new key '{dotted}' not mentioned in README (fine if not user-facing)")
     if not cfg_issues and not new_keys:
         print("  no new config keys")
     elif not cfg_issues:
