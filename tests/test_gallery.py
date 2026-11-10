@@ -119,3 +119,14 @@ def test_corrupt_cache_is_rebuilt_not_fatal(tmp_path):
     assert list(g.names) == ["alice"]
     _, stats2 = build_gallery(faces, det, rec, cache, "fake:v1")  # the cache was rewritten
     assert stats2.reused == 1
+
+
+def test_cache_is_written_at_the_configured_name(tmp_path):
+    faces = tmp_path / "faces"
+    _write_img(faces / "alice" / "a.png", 200)
+    cache = tmp_path / "gallery.cache"  # not *.npz: numpy must not rename it
+    det, rec = _FakeDetector(), _FakeRecognizer()
+    build_gallery(faces, det, rec, cache, "fake:v1")
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["faces", "gallery.cache"]
+    _, stats = build_gallery(faces, det, rec, cache, "fake:v1")
+    assert stats.reused == 1
