@@ -33,6 +33,11 @@ pip install -e .[dev]
 facerec download-models           # ~39 MB into models/, SHA256-verified
 ```
 
+> **Windows: "An Application Control policy has blocked this file"**
+> Windows 11 Smart App Control blocks the unsigned `facerec.exe` launcher that pip creates.
+> Run every command through Python instead; it works the same way everywhere:
+> `python -m facerec download-models`, `python -m facerec run`, and so on.
+
 ## Enrol people
 
 Put one or more photos per person in `data/faces/<Name>/`:
