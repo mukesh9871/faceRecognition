@@ -103,3 +103,19 @@ def test_build_gallery_caches_and_skips_faceless_images(tmp_path):
     # A different backend invalidates the cache.
     _, stats3 = build_gallery(faces, det, rec, cache, "fake:v2")
     assert stats3.embedded == 2
+
+
+def test_corrupt_cache_is_rebuilt_not_fatal(tmp_path):
+    faces = tmp_path / "faces"
+    _write_img(faces / "alice" / "a.png", 200)
+    cache = tmp_path / "gallery.npz"
+    det, rec = _FakeDetector(), _FakeRecognizer()
+    build_gallery(faces, det, rec, cache, "fake:v1")
+    data = cache.read_bytes()
+    cache.write_bytes(data[: len(data) // 2])  # e.g. killed while the cache was being written
+
+    g, stats = build_gallery(faces, det, rec, cache, "fake:v1")
+    assert (stats.embedded, stats.reused) == (1, 0)
+    assert list(g.names) == ["alice"]
+    _, stats2 = build_gallery(faces, det, rec, cache, "fake:v1")  # the cache was rewritten
+    assert stats2.reused == 1
