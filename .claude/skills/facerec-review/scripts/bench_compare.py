@@ -139,7 +139,7 @@ def main() -> int:
 
     root = Path(git(Path.cwd(), "rev-parse", "--show-toplevel"))
     if not (root / "models").exists() or not any((root / "models").glob("*.onnx")):
-        print("Models missing: run `facerec download-models` first.")
+        print("Models missing: run `python -m facerec download-models` first.")
         return 2
 
     tmp = Path(tempfile.mkdtemp(prefix="facerec-bench-"))
