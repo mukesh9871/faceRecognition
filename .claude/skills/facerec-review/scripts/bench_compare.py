@@ -153,15 +153,21 @@ def main() -> int:
         head = run_bench(root, clip, args.frames, args.repeat, args.every_frame)
 
         base = None
+        base_note = ""
         base_sha = git(root, "rev-parse", "--short", args.base)
         git(root, "worktree", "add", "--detach", str(worktree), args.base)
-        if not (worktree / "src" / "facerec").exists():
-            print(f"Base {args.base} ({base_sha}) has no src/facerec (pre-rewrite code); "
-                  "head numbers only.")
+        # The benchmark needs the runnable CLI (`python -m facerec run --benchmark`), which only
+        # exists from the pipeline PR on; earlier bases (pre-rewrite or library-only) can't run.
+        if not (worktree / "src" / "facerec" / "__main__.py").exists():
+            base_note = (f"base {args.base} ({base_sha}) has no runnable facerec CLI "
+                         "(pre-rewrite or library-only code)")
+            print(f"Skipping base: {base_note}.")
         else:
             shutil.copytree(root / "models", worktree / "models", dirs_exist_ok=True)
             print(f"Benchmarking base {args.base} ({base_sha}) ...")
             base = run_bench(worktree, clip, args.frames, args.repeat, args.every_frame)
+            if base is None:
+                base_note = f"the base {args.base} ({base_sha}) benchmark failed (see above)"
     finally:
         if worktree.exists():
             subprocess.run(["git", "-C", str(root), "worktree", "remove", "--force", str(worktree)],
@@ -196,6 +202,11 @@ def main() -> int:
         flags.append(f"embeddings/frame {head['embeds']:.2f} > 0.3 in tracked mode")
     if head.get("faces", 0) < n_faces - 0.05:
         flags.append(f"head finds {head.get('faces', 0):.2f} of {n_faces} faces per frame")
+    if base is None:
+        # Never claim "no regression" without a base: only head-only checks ran.
+        print(f"\nNO BASE COMPARISON: {base_note}. Only head-only checks ran.")
+        print("HEAD PROBLEMS: " + "; ".join(flags) if flags else "Head-only checks passed.")
+        return 1 if base_note.startswith("the base") else 0
     print("\nREGRESSION: " + "; ".join(flags) if flags else "\nNo regression detected.")
     return 0
 
