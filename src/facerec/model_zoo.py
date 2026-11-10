@@ -56,14 +56,18 @@ def download_models(models_dir: Path, force: bool = False) -> list[Path]:
         print(f"  download  {m.filename} ...", flush=True)
         with tempfile.NamedTemporaryFile(delete=False, dir=models_dir, suffix=".part") as tmp:
             tmp_path = Path(tmp.name)
-            with urllib.request.urlopen(m.url, timeout=60) as resp:
-                shutil.copyfileobj(resp, tmp)
-        digest = sha256_of(tmp_path)
-        if digest != m.sha256:
+        try:
+            with open(tmp_path, "wb") as out, urllib.request.urlopen(m.url, timeout=60) as resp:
+                shutil.copyfileobj(resp, out)
+            digest = sha256_of(tmp_path)
+            if digest != m.sha256:
+                raise RuntimeError(
+                    f"Checksum mismatch for {m.filename}: expected {m.sha256}, got {digest}"
+                )
+            tmp_path.replace(dest)
+        except BaseException:
+            # Network error, bad checksum or Ctrl+C: never leave a partial .part file behind.
             tmp_path.unlink(missing_ok=True)
-            raise RuntimeError(
-                f"Checksum mismatch for {m.filename}: expected {m.sha256}, got {digest}"
-            )
-        tmp_path.replace(dest)
+            raise
         paths.append(dest)
     return paths
