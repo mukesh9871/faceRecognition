@@ -193,6 +193,6 @@ def _load_cache(cache_path: Path, backend: str) -> dict[str, tuple[np.ndarray, i
                     z["keys"], z["embeddings"], z["mtimes"], z["sizes"], z["labels"]
                 )
             }
-    except (OSError, KeyError, ValueError) as exc:
+    except Exception as exc:  # it's only a cache: any damage (e.g. BadZipFile) -> rebuild
         log.warning("Ignoring unreadable gallery cache %s (%s)", cache_path, exc)
         return {}
