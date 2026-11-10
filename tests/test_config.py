@@ -55,3 +55,16 @@ def test_repo_config_yaml_matches_the_dataclasses():
     repo_cfg = Path(__file__).resolve().parents[1] / "config.yaml"
     cfg = load_config(repo_cfg)
     assert cfg.detector.name == "yunet" and cfg.recognizer.name == "sface"
+
+
+def test_backend_id_changes_with_recognizer_or_detector():
+    from facerec.registry import backend_id
+
+    base = Config()
+    other_rec = Config()
+    other_rec.recognizer.model = "models/arcface.onnx"
+    other_det = Config()
+    other_det.detector.model = "models/scrfd.onnx"
+    ids = {backend_id(base), backend_id(other_rec), backend_id(other_det)}
+    assert len(ids) == 3
+    assert backend_id(base) == backend_id(Config())

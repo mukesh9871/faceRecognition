@@ -53,5 +53,11 @@ def create_recognizer(cfg: Config) -> Recognizer:
 
 
 def backend_id(cfg: Config) -> str:
-    """Identifies the embedding space; cached gallery embeddings are only valid for the same id."""
-    return f"{cfg.recognizer.name}:{cfg.resolve(cfg.recognizer.model).name}"
+    """Identifies the embedding space; cached gallery embeddings are only valid for the same id.
+
+    The detector is part of it because recognizers align faces on the detector's landmarks:
+    another detector gives different crops, so the cached embeddings would no longer match.
+    """
+    det = f"{cfg.detector.name}:{cfg.resolve(cfg.detector.model).name}"
+    rec = f"{cfg.recognizer.name}:{cfg.resolve(cfg.recognizer.model).name}"
+    return f"{rec}|{det}"
